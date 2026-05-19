@@ -32,16 +32,25 @@ if not st.session_state.auth:
                 st.error("❌ 密碼錯誤，請重新輸入！")
     st.stop()
 
-# --- 3. 自動從 GitHub 根目錄讀取預載的 Excel 資料庫 ---
+
+# --- 3. 智慧雙層套件防禦 - 自動載入 GitHub 的 Excel 資料庫 ---
 @st.cache_data(show_spinner=False)
 def load_data(file_name):
     if os.path.exists(file_name):
         try:
+            # 第一層防禦：常規讀取
             return pd.read_excel(file_name).fillna("").astype(str)
-        except Exception as e:
+        except ImportError:
+            try:
+                # 第二層防禦：若缺少 openpyxl 引擎，強制切換成內建引擎相容模式
+                return pd.read_excel(file_name, engine='openpyxl').fillna("").astype(str)
+            except Exception:
+                return None
+        except Exception:
             return None
     return None
 
+# 讀取你推上 GitHub 的那兩份 Excel
 df_job = load_data("job_data.xlsx")
 df_bank = load_data("bank_data.xlsx")
 
@@ -53,12 +62,12 @@ if st.sidebar.button("🔒 安全登出系統"):
     st.rerun()
 
 st.sidebar.divider()
-st.sidebar.info("💡 提示：本系統已預載雲端資料庫。若需更新內容，請直接將新的 Excel 檔案上傳至 GitHub 覆蓋原檔案即可自動同步！")
+st.sidebar.info("💡 提示：本系統已自動連線至 GitHub 預載最新資料庫。若未來有需要更新表格內容，請直接將新的 Excel 檔案上傳到 GitHub 覆蓋舊檔即可同步！")
 
 
 # --- 5. 前台核心功能：智慧關鍵字搜尋系統 ---
 st.title("🔍 職業類別 & 銀行代號智慧搜尋系統")
-st.caption("📱 支援手機、平板、電腦跨裝置網頁瀏覽（資料庫同步 GitHub 最新版本）")
+st.caption("📱 支援手機、平板、電腦跨裝置網頁瀏覽（資料庫已與 GitHub 同步）")
 
 tab1, tab2 = st.tabs(["💼 職業類別快速查詢", "🏦 銀行代號快速查詢"])
 
@@ -86,7 +95,7 @@ with tab1:
             st.info("💡 提示：在上方輸入關鍵字後，系統會自動在整張表格中進行智慧盲搜。")
             st.dataframe(df_job_clean, use_container_width=True, hide_index=True)
     else:
-        st.error("⚠️ 找不到職業類別資料庫檔。請確認 GitHub 根目錄中是否存在『job_data.xlsx』。")
+        st.error("⚠️ 系統載入失敗。請至 GitHub 檢查確認是否有將職業類別表改名為「job_data.xlsx」並放在根目錄。")
 
 # --- Tab 2: 銀行代號查詢 ---
 with tab2:
@@ -112,4 +121,4 @@ with tab2:
             st.info("💡 提示：可以輸入銀行名稱、代號或地方地名，系統會自動過濾。")
             st.dataframe(df_bank_clean, use_container_width=True, hide_index=True)
     else:
-        st.error("⚠️ 找不到銀行代號資料庫檔。請確認 GitHub 根目錄中是否存在『bank_data.xlsx』。")
+        st.error("⚠️ 系統載入失敗。請至 GitHub 檢查確認是否有將銀行代號表改名為「bank_data.xlsx」並放在根目錄。")
