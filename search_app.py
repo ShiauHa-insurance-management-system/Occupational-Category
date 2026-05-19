@@ -1,19 +1,18 @@
 import streamlit as st
 import pandas as pd
-import io
+import os
 
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="職業類別 & 銀行代號查詢系統", layout="wide")
 
-# 強制調整按鈕與下載鍵的視覺樣式
+# 強制調整輸入框與表格的視覺樣式
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; margin-bottom: 10px; }
-    .stDownloadButton>button { width: 100%; border-radius: 5px; height: 3em; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. 安全門禁系統 (Session State 隔離) ---
+# --- 2. 安全門禁系統 ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
@@ -33,74 +32,41 @@ if not st.session_state.auth:
                 st.error("❌ 密碼錯誤，請重新輸入！")
     st.stop()
 
-# --- 3. 初始化雲端資料庫（防系統休眠消失機制） ---
-if "df_job" not in st.session_state:
-    st.session_state.df_job = None
-if "df_bank" not in st.session_state:
-    st.session_state.df_bank = None
+# --- 3. 自動從 GitHub 根目錄讀取預載的 Excel 資料庫 ---
+@st.cache_data(show_spinner=False)
+def load_data(file_name):
+    if os.path.exists(file_name):
+        try:
+            return pd.read_excel(file_name).fillna("").astype(str)
+        except Exception as e:
+            return None
+    return None
 
-# --- 4. 主介面與側邊欄管理（手動登出與檔案建檔） ---
+df_job = load_data("job_data.xlsx")
+df_bank = load_data("bank_data.xlsx")
+
+
+# --- 4. 側邊欄安全管理 ---
 st.sidebar.title("⚙️ 系統管理中心")
-
-# 一鍵手動登出
 if st.sidebar.button("🔒 安全登出系統"):
     st.session_state.auth = False
     st.rerun()
 
 st.sidebar.divider()
-st.sidebar.subheader("📥 原始資料建檔區")
-
-# 職業類別表上傳
-job_file = st.sidebar.file_uploader("上傳『職業類別表』Excel", type=["xlsx", "xls"])
-if job_file:
-    try:
-        st.session_state.df_job = pd.read_excel(job_file).fillna("").astype(str)
-        st.sidebar.success("✅ 職業類別表建檔成功！")
-    except Exception as e:
-        st.sidebar.error(f"職業表讀取失敗: {str(e)}")
-
-# 銀行代號表上傳
-bank_file = st.sidebar.file_uploader("上傳『銀行代號表』Excel", type=["xlsx", "xls"])
-if bank_file:
-    try:
-        st.session_state.df_bank = pd.read_excel(bank_file).fillna("").astype(str)
-        st.sidebar.success("✅ 銀行代號表建檔成功！")
-    except Exception as e:
-        st.sidebar.error(f"銀行表讀取失敗: {str(e)}")
-
-# 備份現有參數功能（改用內建的 openpyxl 引擎，100% 避開套件缺失錯誤）
-st.sidebar.divider()
-st.sidebar.subheader("💾 系統參數備份")
-if st.session_state.df_job is not None or st.session_state.df_bank is not None:
-    output_backup = io.BytesIO()
-    # 【核心修正】：這裡改用 openpyxl 引擎，不需要再依賴 xlsxwriter
-    with pd.ExcelWriter(output_backup, engine='openpyxl') as writer:
-        if st.session_state.df_job is not None:
-            st.session_state.df_job.to_excel(writer, index=False, sheet_name='職業類別資料')
-        if st.session_state.df_bank is not None:
-            st.session_state.df_bank.to_excel(writer, index=False, sheet_name='銀行代號資料')
-    
-    st.sidebar.download_button(
-        label="📦 下載當前資料庫備份",
-        data=output_backup.getvalue(),
-        file_name="系統智慧資料庫備份.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-else:
-    st.sidebar.info("暫無資料可供備份，請先上傳 Excel 檔案。")
+st.sidebar.info("💡 提示：本系統已預載雲端資料庫。若需更新內容，請直接將新的 Excel 檔案上傳至 GitHub 覆蓋原檔案即可自動同步！")
 
 
 # --- 5. 前台核心功能：智慧關鍵字搜尋系統 ---
 st.title("🔍 職業類別 & 銀行代號智慧搜尋系統")
-st.caption("📱 支援手機、平板、電腦跨裝置網頁瀏覽")
+st.caption("📱 支援手機、平板、電腦跨裝置網頁瀏覽（資料庫同步 GitHub 最新版本）")
 
 tab1, tab2 = st.tabs(["💼 職業類別快速查詢", "🏦 銀行代號快速查詢"])
 
 # --- Tab 1: 職業類別查詢 ---
 with tab1:
     st.subheader("💼 職業類別模糊搜尋")
-    if st.session_state.df_job is not None:
-        df_job_clean = st.session_state.df_job.copy()
+    if df_job is not None:
+        df_job_clean = df_job.copy()
         for col in df_job_clean.columns:
             df_job_clean[col] = df_job_clean[col].str.strip()
             
@@ -120,13 +86,13 @@ with tab1:
             st.info("💡 提示：在上方輸入關鍵字後，系統會自動在整張表格中進行智慧盲搜。")
             st.dataframe(df_job_clean, use_container_width=True, hide_index=True)
     else:
-        st.warning("⚠️ 系統尚未建立職業類別資料。請先在左側面板上傳『職業類別表』Excel 檔案建檔。")
+        st.error("⚠️ 找不到職業類別資料庫檔。請確認 GitHub 根目錄中是否存在『job_data.xlsx』。")
 
 # --- Tab 2: 銀行代號查詢 ---
 with tab2:
     st.subheader("🏦 銀行與分行代號模糊搜尋")
-    if st.session_state.df_bank is not None:
-        df_bank_clean = st.session_state.df_bank.copy()
+    if df_bank is not None:
+        df_bank_clean = df_bank.copy()
         for col in df_bank_clean.columns:
             df_bank_clean[col] = df_bank_clean[col].str.strip()
             
@@ -146,4 +112,4 @@ with tab2:
             st.info("💡 提示：可以輸入銀行名稱、代號或地方地名，系統會自動過濾。")
             st.dataframe(df_bank_clean, use_container_width=True, hide_index=True)
     else:
-        st.warning("⚠️ 系統尚未建立銀行代號資料。請先在左側面板上傳『銀行代號表』Excel 檔案建檔。")
+        st.error("⚠️ 找不到銀行代號資料庫檔。請確認 GitHub 根目錄中是否存在『bank_data.xlsx』。")
